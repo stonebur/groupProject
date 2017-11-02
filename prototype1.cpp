@@ -16,6 +16,8 @@ const int LEVEL_HEIGHT = 480;
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
 
+int frameNum = 0;
+const int GROUND_LEVEL = 390;
 
 //Texture wrapper class
 class LTexture
@@ -57,6 +59,8 @@ class Player
 		static const int PLAYER_WIDTH = 30;
 		static const int PLAYER_HEIGHT = 50;
 
+		SDL_Rect collisionBox;
+
 		//Maximum axis velocity of the player
 		static const int PLAYER_VEL = 3;
 
@@ -67,7 +71,7 @@ class Player
 		void handleEvent( SDL_Event& e );
 
 		//Moves the player
-		void move();
+		void move( SDL_Rect& collision);
 
 		//Shows the player on the screen relative to the camera
 		void render( int camX, int camY, int walkFrame, std::string direction);
@@ -76,12 +80,14 @@ class Player
 		int getPosX();
 		int getPosY();
 
-    private:
+   private:
 		//The X and Y offsets of the player
 		int mPosX, mPosY;
 
 		//The velocity of the player
 		int mVelX, mVelY;
+
+		
 };
 
 //Starts up SDL and creates window
@@ -93,17 +99,22 @@ bool loadMedia();
 //Frees media and shuts down SDL
 void close();
 
+bool checkCollision(SDL_Rect a, SDL_Rect b);
+
 //The window we'll be rendering to
 SDL_Window* gWindow = NULL;
 
 //The window renderer
 SDL_Renderer* gRenderer = NULL;
 
-//Scene textures
+//Player textures
 LTexture samusRight;
 LTexture samusLeft;
 LTexture samusStanding;
 LTexture background;
+
+//Enemy textures
+LTexture enemy;
 
 SDL_Rect samusRightClips[10];
 SDL_Rect samusLeftClips[10];
@@ -215,15 +226,20 @@ Player::Player()
 {
     //Initialize the offsets
     mPosX = 0;
-    mPosY = 390;
+    mPosY = GROUND_LEVEL;
 
     //Initialize the velocity
     mVelX = 0;
     mVelY = 0;
+
+	collisionBox.w = PLAYER_WIDTH;
+	collisionBox.h = PLAYER_HEIGHT;
 }
 
 void Player::handleEvent( SDL_Event& e )
 {
+	
+	
     //If a key was pressed
 	if (e.type == SDL_KEYDOWN && e.key.repeat == 0)
     {
@@ -234,9 +250,20 @@ void Player::handleEvent( SDL_Event& e )
             //case SDLK_UP: mVelY -= PLAYER_VEL; break;
             //case SDLK_DOWN: mVelY += PLAYER_VEL; break;
             case SDLK_LEFT: mVelX -= PLAYER_VEL; break;
-            case SDLK_RIGHT: mVelX += PLAYER_VEL; break;
+			case SDLK_RIGHT: mVelX += PLAYER_VEL; break;
+			case SDLK_SPACE:
+			{
+			
+				
+					mVelY = -40;
+					frameNum = 1;
+				break;
+			}
+			
+			
+			
 
-        }
+	    }
     }
 	
 
@@ -246,36 +273,64 @@ void Player::handleEvent( SDL_Event& e )
         //Adjust the velocity
         switch( e.key.keysym.sym )
         {
+			
             //case SDLK_UP: mVelY += PLAYER_VEL; break;
             //case SDLK_DOWN: mVelY -= PLAYER_VEL; break;
             case SDLK_LEFT: mVelX += PLAYER_VEL; break;
             case SDLK_RIGHT: mVelX -= PLAYER_VEL; break;
+			
+			
+			
 				
         }
     }
 		
 }
 
-void Player::move()
+void Player::move(SDL_Rect& collision)
 {
+	if(mPosY < GROUND_LEVEL)
+		frameNum++;   //keeps frameNum from incrementing while not jumping
+
     //Move the player left or right
     mPosX += mVelX;
+	collisionBox.x = mPosX;
+	
+	collisionBox.y = mPosY;
 
     //If the player went too far to the left or right
-    if( ( mPosX < 0 ) || ( mPosX + PLAYER_WIDTH > LEVEL_WIDTH ) )
+    if( ( mPosX < 0 ) || ( mPosX + PLAYER_WIDTH > LEVEL_WIDTH ) || checkCollision(collisionBox, collision))
     {
         //Move back
         mPosX -= mVelX;
+		collisionBox.x = mPosX;
     }
 
-    //Move the player up or down
-    mPosY += mVelY;
+    //Move the player up or down (indicates jumping)
+	if (mVelY < 0 && mPosY == GROUND_LEVEL)
+	{
+		mPosY += mVelY;
+		collisionBox.y = mPosY;
+	}
+	else if ( mPosY < GROUND_LEVEL)
+	{
+		mVelY = .25 * frameNum;  //acceleration over time
+		mPosY = mPosY + mVelY;
+		
+		if (mPosY >= GROUND_LEVEL)
+		{
+			mPosY = GROUND_LEVEL;
+			mVelY = 0;
+		}
 
+		collisionBox.y = mPosY;
+	}
     //If the player went too far up or down
-    if( ( mPosY < 0 ) || ( mPosY + PLAYER_HEIGHT > LEVEL_HEIGHT ) )
+    if( ( mPosY < 0 ) || ( mPosY + PLAYER_HEIGHT > LEVEL_HEIGHT ) || checkCollision(collisionBox, collision))
     {
         //Move back
         mPosY -= mVelY;
+		collisionBox.y = mPosY;
     }
 	
 }
@@ -289,6 +344,7 @@ void Player::render( int camX, int camY, int walkFrame, std::string direction)
 		samusLeft.render(mPosX - camX, mPosY - camY, &samusLeftClips[walkFrame]);
 	else if (direction == "stand")
 		samusStanding.render(mPosX - camX, mPosY - camY, &samusStandingClips[1]);
+	
 	
 }
 
@@ -364,19 +420,19 @@ bool loadMedia()
 	//load samus right movement texture
 	if( !samusRight.loadFromFile( "samusRight.png" ) )
 	{
-		printf( "Failed to load dot texture!\n" );
+		printf( "Failed to load samus right texture!\n" );
 		success = false;
 	}
 	//load samus left movement texture
 	if (!samusLeft.loadFromFile("samusLeft.png"))
 	{
-		printf("Failed to load dot texture!\n");
+		printf("Failed to load samus left texture!\n");
 		success = false;
 	}
 	//load samus standing still
 	if (!samusStanding.loadFromFile("samusStanding.png"))
 	{
-		printf("Failed to load dot texture!\n");
+		printf("Failed to load samus standing texture!\n");
 		success = false;
 	}
 
@@ -384,6 +440,12 @@ bool loadMedia()
 	if( !background.loadFromFile( "smbg.png" ) )
 	{
 		printf( "Failed to load background texture!\n" );
+		success = false;
+	}
+	//load enemy
+	if (!enemy.loadFromFile("enemy.png"))
+	{
+		printf("Failed to load enemy texture!\n");
 		success = false;
 	}
 	else
@@ -515,6 +577,7 @@ void close()
 	background.free();
 	samusLeft.free();
 	samusStanding.free();
+	enemy.free();
 
 	//Destroy window	
 	SDL_DestroyRenderer( gRenderer );
@@ -526,6 +589,48 @@ void close()
 	IMG_Quit();
 	SDL_Quit();
 }
+
+bool checkCollision(SDL_Rect a, SDL_Rect b)
+{
+	
+	int leftA, leftB;
+	int rightA, rightB;
+	int topA, topB;
+	int bottomA, bottomB;
+
+	leftA = a.x;
+	rightA = a.x + a.w;
+	topA = a.y;
+	bottomA = a.y + a.h;
+
+	leftB = b.x;
+	rightB = b.x + b.w;
+	topB = b.y;
+	bottomB = b.y + b.h;
+
+	if (bottomA <= topB)
+	{
+		return false;
+	}
+
+	if (topA >= bottomB)
+	{
+		return false;
+	}
+
+	if (rightA <= leftB)
+	{
+		return false;
+	}
+
+	if (leftA >= rightB)
+	{
+		return false;
+	}
+	
+	return true;
+}
+#include "enemy_mvmt.h"
 
 int main( int argc, char* args[] )
 {
@@ -552,11 +657,16 @@ int main( int argc, char* args[] )
 
 			//The player that will be moving around on the screen
 			Player p1;
+			Enemy e1;
 
+			
 			//The camera area
 			SDL_Rect camera = { 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT };
 
 			const Uint8* keystates = SDL_GetKeyboardState(NULL);
+
+		
+			
 
 			//While application is running
 			while( !quit )
@@ -579,6 +689,10 @@ int main( int argc, char* args[] )
 				bool rMvmt = 0;
 				bool lMvmt = 0;
 				bool stand = 0;
+				
+				
+				
+				
 
 				if (keystates[SDL_SCANCODE_RIGHT])
 				{
@@ -589,6 +703,8 @@ int main( int argc, char* args[] )
 						WALK_RIGHT = 0;
 
 					rMvmt = 1;
+					
+
 				}
 				else if (keystates[SDL_SCANCODE_LEFT])
 				{
@@ -599,12 +715,18 @@ int main( int argc, char* args[] )
 
 					lMvmt = 1;
 				}
+				
 				else 
 				{
 					stand = 1;
 				}
+			
+				
+					
 				//Move the player
-				p1.move();
+				p1.move(e1.collisionBox);
+				e1.move(p1.collisionBox);
+				
 
 				//Center the camera over the player
 				camera.x = ( p1.getPosX() + Player::PLAYER_WIDTH / 2 ) - SCREEN_WIDTH / 2;
@@ -635,16 +757,18 @@ int main( int argc, char* args[] )
 				//Render background
 				background.render( 0, 0, &camera );
 
+				//render enemy
+				e1.render(camera.x, camera.y);
+
 				//Render objects
-				if(rMvmt)
+				if (rMvmt)
 					p1.render(camera.x, camera.y, WALK_RIGHT / 4, "right");
-				else if(lMvmt)
+				else if (lMvmt)
 					p1.render(camera.x, camera.y, WALK_LEFT / 4, "left");
-				else if(stand)
+				else if (stand)
 					p1.render(camera.x, camera.y, NULL, "stand");
 				
-
-
+				
 				//Update screen
 				SDL_RenderPresent( gRenderer );
 			}
